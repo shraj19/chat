@@ -16,8 +16,8 @@ import (
 )
 
 type Handler struct {
-	repo  *Repository
-	jwt   *auth.JWTMaker
+	repo *Repository
+	jwt  *auth.JWTMaker
 }
 
 func NewHandler(repo *Repository, jwt *auth.JWTMaker) *Handler {
@@ -125,7 +125,7 @@ func (h *Handler) Login() http.Handler {
 			Path:     "/api/",
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
+			SameSite: http.SameSiteLaxMode,
 		})
 
 		w.Header().Set("Content-Type", "application/json")
