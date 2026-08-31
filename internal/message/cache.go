@@ -1,21 +1,22 @@
 package message
 
 import (
-	"chat-v2/internal/metrics"
-	"chat-v2/internal/pkg/logger"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/google/uuid"
+	gocache "github.com/patrickmn/go-cache"
 	goredis "github.com/redis/go-redis/v9"
+
+	"chat-v2/internal/metrics"
+	"chat-v2/internal/pkg/logger"
 )
 
 const maxCachedMessages = 100
 
-type Cache interface {
+type MsgCache interface {
 	GetRecent(ctx context.Context, conversationID uuid.UUID) ([]*Message, error)
 	SetRecent(ctx context.Context, conversationID uuid.UUID, messages []*Message) error
 	AddMessage(ctx context.Context, conversationID uuid.UUID, msg *Message) error
@@ -171,7 +172,7 @@ func (c *MemoryCache) SetRecent(ctx context.Context, conversationID uuid.UUID, m
 
 func (c *MemoryCache) AddMessage(ctx context.Context, conversationID uuid.UUID, msg *Message) error {
 	key := conversationID.String()
-	
+
 	var messages []*Message
 	if val, found := c.cache.Get(key); found {
 		messages = val.([]*Message)
@@ -194,10 +195,10 @@ func (c *MemoryCache) Invalidate(ctx context.Context, conversationID uuid.UUID) 
 // CachedService wraps Service with caching
 type CachedService struct {
 	*Service
-	cache Cache
+	cache MsgCache
 }
 
-func NewCachedService(svc *Service, cache Cache) *CachedService {
+func NewCachedService(svc *Service, cache MsgCache) *CachedService {
 	return &CachedService{Service: svc, cache: cache}
 }
 

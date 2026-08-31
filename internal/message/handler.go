@@ -13,23 +13,23 @@ import (
 )
 
 type Handler struct {
-	repo      *Repository
-	convRepo  *conversation.Repository
-	cache     Cache
-	partCache *conversation.ParticipantCache
+	repo             *Repository
+	convRepo         *conversation.Repository
+	cache            MsgCache
+	participantCache *conversation.ParticipantCache
 }
 
 func NewHandler(
 	repo *Repository,
 	convRepo *conversation.Repository,
-	cache Cache,
-	partCache *conversation.ParticipantCache,
+	cache MsgCache,
+	participantCache *conversation.ParticipantCache,
 ) *Handler {
 	return &Handler{
-		repo:      repo,
-		convRepo:  convRepo,
-		cache:     cache,
-		partCache: partCache,
+		repo:             repo,
+		convRepo:         convRepo,
+		cache:            cache,
+		participantCache: participantCache,
 	}
 }
 
@@ -52,7 +52,7 @@ func (h *Handler) List() http.Handler {
 			return
 		}
 
-		isParticipant, err := h.partCache.IsParticipant(r.Context(), convID, userID)
+		isParticipant, err := h.participantCache.IsParticipant(r.Context(), convID, userID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to check membership")
 			return

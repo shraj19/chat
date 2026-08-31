@@ -22,11 +22,11 @@ var (
 const dedupTTL = 5 * time.Minute
 
 type Service struct {
-	repo      *Repository
-	partCache *conversation.ParticipantCache
-	convRepo  *conversation.Repository
-	publisher EventPublisher
-	redis     *goredis.Client
+	repo             *Repository
+	participantCache *conversation.ParticipantCache
+	convRepo         *conversation.Repository
+	publisher        EventPublisher
+	redis            *goredis.Client
 }
 
 type EventPublisher interface {
@@ -43,13 +43,13 @@ type OutMessage struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-func NewService(repo *Repository, convRepo *conversation.Repository, partCache *conversation.ParticipantCache, publisher EventPublisher, redis *goredis.Client) *Service {
+func NewService(repo *Repository, convRepo *conversation.Repository, participantCache *conversation.ParticipantCache, publisher EventPublisher, redis *goredis.Client) *Service {
 	return &Service{
-		repo:      repo,
-		convRepo:  convRepo,
-		partCache: partCache,
-		publisher: publisher,
-		redis:     redis,
+		repo:             repo,
+		convRepo:         convRepo,
+		participantCache: participantCache,
+		publisher:        publisher,
+		redis:            redis,
 	}
 }
 
@@ -72,8 +72,8 @@ func (s *Service) Create(ctx context.Context, userID, conversationID uuid.UUID, 
 	// Participant check
 	var isParticipant bool
 	var err error
-	if s.partCache != nil {
-		isParticipant, err = s.partCache.IsParticipant(ctx, conversationID, userID)
+	if s.participantCache != nil {
+		isParticipant, err = s.participantCache.IsParticipant(ctx, conversationID, userID)
 	} else {
 		isParticipant, err = s.convRepo.IsParticipant(ctx, conversationID, userID)
 	}

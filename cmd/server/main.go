@@ -76,9 +76,9 @@ func main() {
 	}
 
 	// Init caches
-	partCache := conversation.NewParticipantCache(redisClient, convRepo)
+	participantCache := conversation.NewParticipantCache(redisClient, convRepo)
 
-	var msgCache message.Cache
+	var msgCache message.MsgCache
 	if redisClient != nil {
 		msgCache = message.NewRedisCache(redisClient, 24*time.Hour)
 	} else {
@@ -107,14 +107,14 @@ func main() {
 	}
 
 	// Init services
-	msgService := message.NewService(msgRepo, convRepo, partCache, publisher, redisClient)
+	msgService := message.NewService(msgRepo, convRepo, participantCache, publisher, redisClient)
 	cachedMsgService := message.NewCachedService(msgService, msgCache)
 
 	// Init handlers
 	userHandler := user.NewHandler(userRepo, jwtMaker)
-	convHandler := conversation.NewHandler(convRepo, userRepo, presenceStore, partCache)
-	msgHandler := message.NewHandler(msgRepo, convRepo, msgCache, partCache)
-	wsHandler := realtime.NewHandler(hub, convRepo, partCache, cachedMsgService, presenceStore, cfg.WSAllowedOrigins)
+	convHandler := conversation.NewHandler(convRepo, userRepo, presenceStore, participantCache)
+	msgHandler := message.NewHandler(msgRepo, convRepo, msgCache, participantCache)
+	wsHandler := realtime.NewHandler(hub, convRepo, participantCache, cachedMsgService, presenceStore, cfg.WSAllowedOrigins)
 
 	// Setup routes
 	mux := http.NewServeMux()

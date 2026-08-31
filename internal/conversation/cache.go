@@ -26,7 +26,7 @@ func NewParticipantCache(redis *goredis.Client, repo *Repository) *ParticipantCa
 }
 
 func participantKey(convID uuid.UUID) string {
-	return fmt.Sprintf("conv:%s:members", convID.String())
+	return fmt.Sprintf("cache:conv:%s:members", convID.String())
 }
 
 func (c *ParticipantCache) IsParticipant(ctx context.Context, conversationID, userID uuid.UUID) (bool, error) {

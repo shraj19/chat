@@ -17,18 +17,18 @@ import (
 )
 
 type Handler struct {
-	repo      *Repository
-	userRepo  *user.Repository
-	presence  *redis.PresenceStore
-	partCache *ParticipantCache
+	repo             *Repository
+	userRepo         *user.Repository
+	presence         *redis.PresenceStore
+	participantCache *ParticipantCache
 }
 
-func NewHandler(repo *Repository, userRepo *user.Repository, presence *redis.PresenceStore, partCache *ParticipantCache) *Handler {
+func NewHandler(repo *Repository, userRepo *user.Repository, presence *redis.PresenceStore, participantCache *ParticipantCache) *Handler {
 	return &Handler{
-		repo:      repo,
-		userRepo:  userRepo,
-		presence:  presence,
-		partCache: partCache,
+		repo:             repo,
+		userRepo:         userRepo,
+		presence:         presence,
+		participantCache: participantCache,
 	}
 }
 
@@ -209,8 +209,8 @@ func (h *Handler) Join() http.Handler {
 			return
 		}
 
-		if h.partCache != nil {
-			h.partCache.Add(r.Context(), convID, userID)
+		if h.participantCache != nil {
+			h.participantCache.Add(r.Context(), convID, userID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -254,8 +254,8 @@ func (h *Handler) Leave() http.Handler {
 			return
 		}
 
-		if h.partCache != nil {
-			h.partCache.Remove(r.Context(), convID, userID)
+		if h.participantCache != nil {
+			h.participantCache.Remove(r.Context(), convID, userID)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
