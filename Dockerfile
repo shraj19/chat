@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Build the binary with optimisations
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 
 # Stage 2: Create a runtime image with Redis and Go app
 FROM alpine:3.19

@@ -35,7 +35,7 @@ Prerequisites: Go 1.25+, PostgreSQL, Redis (optional).
 
 ```bash
 cp .env.example .env  # fill in your values
-go run main.go
+go run ./cmd/server
 ```
 
 Migrations run on startup. If Redis isn't available, the app starts anyway using in-memory alternatives.
