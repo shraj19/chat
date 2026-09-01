@@ -1,34 +1,37 @@
 package message
 
 import (
-	"chat-v2/internal/auth"
-	"chat-v2/internal/conversation"
-	"chat-v2/internal/pkg/logger"
+	"time"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/auth"
+	"chat-v2/internal/conversation"
+	"chat-v2/internal/metrics"
+	"chat-v2/internal/pkg/logger"
 )
 
 type Handler struct {
 	repo             *Repository
 	convRepo         *conversation.Repository
-	cache            MsgCache
+	msgCache            MsgCache
 	participantCache *conversation.ParticipantCache
 }
 
 func NewHandler(
 	repo *Repository,
 	convRepo *conversation.Repository,
-	cache MsgCache,
+	msgCache MsgCache,
 	participantCache *conversation.ParticipantCache,
 ) *Handler {
 	return &Handler{
 		repo:             repo,
 		convRepo:         convRepo,
-		cache:            cache,
+		msgCache:            msgCache,
 		participantCache: participantCache,
 	}
 }
@@ -79,12 +82,23 @@ func (h *Handler) List() http.Handler {
 		}
 
 		// Try cache for first page
-		if before == nil && h.cache != nil {
-			if cached, err := h.cache.GetRecent(r.Context(), convID); err == nil && len(cached) > 0 {
+		if before == nil && h.msgCache != nil {
+
+			start := time.Now()
+			defer func() {
+				metrics.CacheOperationsDuration.WithLabelValues("message").Observe(time.Since(start).Seconds())
+			}()
+			if cached, err := h.msgCache.GetRecent(r.Context(), convID); err == nil && len(cached) > 0 {
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(&ListResponse{Messages: cached})
+
+				// Cache hit
+				metrics.CacheHitsTotal.WithLabelValues("message").Inc()
 				return
 			}
+
+			// Cache miss
+			metrics.CacheMissesTotal.WithLabelValues("message").Inc()
 		}
 
 		resp, err := h.repo.List(r.Context(), convID, before, limit)

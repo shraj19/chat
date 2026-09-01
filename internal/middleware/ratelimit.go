@@ -17,6 +17,11 @@ import (
 	"chat-v2/internal/pkg/logger"
 )
 
+/**
+ *	RateLimiter is a middleware that provides rate limiting for HTTP requests.
+ *	It supports both Redis-based distributed rate limiting and in-memory token bucket rate limiting.
+ *	The middleware identifies clients by authenticated user ID (if available) or by IP address.
+ */
 type RateLimiter struct {
 	redisLimiter *redis_rate.Limiter
 	memLimiters  sync.Map
@@ -26,8 +31,26 @@ type RateLimiter struct {
 	ipStrategy   realclientip.Strategy
 }
 
-// NewRateLimiter creates a rate limiter.
-// trustedProxies: 0 = use RemoteAddr only (direct exposure), 1+ = trust that many rightmost proxies in X-Forwarded-For
+/**
+ *	RateLimitResult represents the result of a rate limit check.
+ *	It indicates whether the request is allowed, the limit, remaining requests, and retry-after duration.
+ */
+type RateLimitResult struct {
+	Allowed    bool
+	Limit      int
+	Remaining  int
+	RetryAfter time.Duration
+}
+
+/**
+ *	NewRateLimiter creates a new RateLimiter instance.
+ *	Parameters:
+ *	- redis: Redis client for distributed rate limiting. If nil, only in-memory limiting is used.
+ *	- keyPrefix: Prefix for Redis keys to avoid collisions.
+ *	- limit: Maximum number of requests allowed in the specified window.
+ *	- window: Time duration for the rate limit window.
+ *	- trustedProxies: Number of trusted proxies to consider when extracting client IP from headers.
+ */
 func NewRateLimiter(redis *goredis.Client, keyPrefix string, limit int, window time.Duration, trustedProxies int) *RateLimiter {
 	var redisLimiter *redis_rate.Limiter
 	if redis != nil {
@@ -57,16 +80,17 @@ func NewRateLimiter(redis *goredis.Client, keyPrefix string, limit int, window t
 // Deprecated: Use NewRateLimiter and RateLimitMiddleware for proper IP handling.
 func RateLimit(redis *goredis.Client, keyPrefix string, limit int, window time.Duration) func(http.Handler) http.Handler {
 	limiter := NewRateLimiter(redis, keyPrefix, limit, window, 0) // default: don't trust XFF
-	return limiter.RateLimiter()
+	return limiter.middleware()
 }
 
 // RateLimitWithConfig returns middleware with proper trusted proxy configuration.
 func RateLimitWithConfig(redis *goredis.Client, keyPrefix string, limit int, window time.Duration, trustedProxies int) func(http.Handler) http.Handler {
 	limiter := NewRateLimiter(redis, keyPrefix, limit, window, trustedProxies)
-	return limiter.RateLimiter()
+	return limiter.middleware()
 }
 
-func (l *RateLimiter) RateLimiter() func(http.Handler) http.Handler {
+
+func (l *RateLimiter) middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			identifier := l.getClientIdentifier(r)
@@ -79,9 +103,8 @@ func (l *RateLimiter) RateLimiter() func(http.Handler) http.Handler {
 
 			if !result.Allowed {
 				retryAfter := int(result.RetryAfter.Seconds())
-				if retryAfter < 1 {
-					retryAfter = 1
-				}
+				retryAfter = max(retryAfter, 1) // Ensure at least 1 second
+
 				w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
 				logger.Warn("Rate limit exceeded", "key", key, "identifier", identifier)
 				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
@@ -93,13 +116,10 @@ func (l *RateLimiter) RateLimiter() func(http.Handler) http.Handler {
 	}
 }
 
-type RateLimitResult struct {
-	Allowed    bool
-	Limit      int
-	Remaining  int
-	RetryAfter time.Duration
-}
-
+/**
+ *	Allow checks if the request is allowed under the rate limit.
+ *	It first tries Redis for distributed rate limiting. If Redis is unavailable or fails, it falls back to an in-memory token bucket.
+ */
 func (l *RateLimiter) Allow(ctx context.Context, key string) RateLimitResult {
 	// Try Redis first
 	if l.redisLimiter != nil {

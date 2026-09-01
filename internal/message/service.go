@@ -1,8 +1,6 @@
 package message
 
 import (
-	"chat-v2/internal/conversation"
-	"chat-v2/internal/pkg/logger"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,9 @@ import (
 
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
+
+	"chat-v2/internal/conversation"
+	"chat-v2/internal/pkg/logger"
 )
 
 var (
