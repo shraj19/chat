@@ -1,14 +1,15 @@
 package message
 
 import (
-	"chat-v2/internal/domain/ent"
-	"chat-v2/internal/domain/ent/message"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/domain/ent"
+	"chat-v2/internal/domain/ent/message"
 )
 
 type Repository struct {

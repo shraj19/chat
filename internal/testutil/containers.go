@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"chat-v2/internal/domain/ent"
 	"context"
 	stdsql "database/sql"
 	"fmt"
@@ -16,6 +15,8 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	tcredis "github.com/testcontainers/testcontainers-go/modules/redis"
 	"github.com/testcontainers/testcontainers-go/wait"
+
+	"chat-v2/internal/domain/ent"
 )
 
 // PostgresContainer holds a running PostgreSQL testcontainer and its DSN.

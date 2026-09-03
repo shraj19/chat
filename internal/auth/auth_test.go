@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"chat-v2/internal/auth"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/auth"
 )
 
 const testSecret = "test-secret-key-that-is-at-least-32-bytes-long"

@@ -65,7 +65,9 @@ func (c *RedisCache) GetRecent(ctx context.Context, conversationID uuid.UUID) ([
 	key := cacheKey(conversationID)
 	vals, err := c.client.ZRange(ctx, key, 0, -1).Result()
 	if err != nil {
-		// Redis error: not a hit, not a clean miss — surface the error.
+		// Redis error: not a hit, not a clean miss — surface the error so the
+		// caller falls back to the DB.
+		metrics.CacheErrorsTotal.WithLabelValues("message", "get_recent").Inc()
 		return nil, err
 	}
 
@@ -96,6 +98,8 @@ func (c *RedisCache) SetRecent(ctx context.Context, conversationID uuid.UUID, me
 		return nil
 	}
 
+	start := time.Now()
+
 	key := cacheKey(conversationID)
 	pipe := c.client.Pipeline()
 	pipe.Del(ctx, key)
@@ -113,6 +117,8 @@ func (c *RedisCache) SetRecent(ctx context.Context, conversationID uuid.UUID, me
 	pipe.Expire(ctx, key, c.ttl)
 
 	_, err := pipe.Exec(ctx)
+
+	metrics.CacheOperationsDuration.WithLabelValues("message", "set_recent").Observe(time.Since(start).Seconds())
 	return err
 }
 
@@ -120,6 +126,8 @@ func (c *RedisCache) AddMessage(ctx context.Context, conversationID uuid.UUID, m
 	if c.client == nil || msg == nil {
 		return nil
 	}
+
+	start := time.Now()
 
 	key := cacheKey(conversationID)
 	payload, err := json.Marshal(msg)
@@ -134,6 +142,9 @@ func (c *RedisCache) AddMessage(ctx context.Context, conversationID uuid.UUID, m
 	pipe.Expire(ctx, key, c.ttl)
 
 	_, err = pipe.Exec(ctx)
+
+	metrics.CacheOperationsDuration.WithLabelValues("message", "add_message").Observe(time.Since(start).Seconds())
+
 	return err
 }
 
@@ -141,7 +152,13 @@ func (c *RedisCache) Invalidate(ctx context.Context, conversationID uuid.UUID) e
 	if c.client == nil {
 		return nil
 	}
-	return c.client.Del(ctx, cacheKey(conversationID)).Err()
+
+	start := time.Now()
+
+	err := c.client.Del(ctx, cacheKey(conversationID)).Err()
+
+	metrics.CacheOperationsDuration.WithLabelValues("message", "invalidate").Observe(time.Since(start).Seconds())
+	return err
 }
 
 // MemoryCache is an in-memory MsgCache used as a fallback when Redis is

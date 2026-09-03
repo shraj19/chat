@@ -1,3 +1,4 @@
+// Package conversation provides functionality for managing conversations.
 package conversation
 
 import (
@@ -15,12 +16,14 @@ import (
 
 const participantCacheTTL = 1 * time.Hour
 
+// ParticipantCache is a cache for conversation participants using Redis.
 type ParticipantCache struct {
 	redis         *goredis.Client
 	repo          *Repository
 	populateGroup singleflight.Group // prevents concurrent populate storms
 }
 
+// NewParticipantCache returns a new ParticipantCache.
 func NewParticipantCache(redis *goredis.Client, repo *Repository) *ParticipantCache {
 	return &ParticipantCache{redis: redis, repo: repo}
 }
@@ -29,6 +32,7 @@ func participantKey(convID uuid.UUID) string {
 	return fmt.Sprintf("cache:conv:%s:members", convID.String())
 }
 
+// IsParticipant checks if a user is a participant in a conversation. It first checks the Redis cache, and if not found, falls back to the database. If the cache is missing, it populates it asynchronously.
 func (c *ParticipantCache) IsParticipant(ctx context.Context, conversationID, userID uuid.UUID) (bool, error) {
 	start := time.Now()
 
@@ -44,6 +48,7 @@ func (c *ParticipantCache) IsParticipant(ctx context.Context, conversationID, us
 	if err != nil {
 		// Redis error — log and fallback to DB
 		logger.Warn("Redis error while checking participant cache", "error", err)
+		metrics.CacheErrorsTotal.WithLabelValues("participant", "check").Inc()
 
 		// fallback to DB query
 		return c.repo.IsParticipant(ctx, conversationID, userID)
@@ -54,6 +59,7 @@ func (c *ParticipantCache) IsParticipant(ctx context.Context, conversationID, us
 		if err != nil {
 			// Redis error — log and fallback to DB
 			logger.Warn("Redis error while checking participant membership", "error", err)
+			metrics.CacheErrorsTotal.WithLabelValues("participant", "check").Inc()
 
 			// fallback to DB query
 			return c.repo.IsParticipant(ctx, conversationID, userID)
@@ -143,6 +149,7 @@ func (c *ParticipantCache) populate(ctx context.Context, conversationID uuid.UUI
 	}
 }
 
+// Add adds a user to the participant cache for a conversation.
 func (c *ParticipantCache) Add(ctx context.Context, conversationID, userID uuid.UUID) {
 	if c.redis == nil {
 		return
@@ -161,6 +168,7 @@ func (c *ParticipantCache) Add(ctx context.Context, conversationID, userID uuid.
 	}
 }
 
+// Remove removes a user from the participant cache for a conversation.
 func (c *ParticipantCache) Remove(ctx context.Context, conversationID, userID uuid.UUID) {
 	if c.redis == nil {
 		return
@@ -176,6 +184,7 @@ func (c *ParticipantCache) Remove(ctx context.Context, conversationID, userID uu
 	c.redis.SRem(ctx, key, userID.String())
 }
 
+// Invalidate invalidates the participant cache for a conversation, forcing a refresh on the next access.
 func (c *ParticipantCache) Invalidate(ctx context.Context, conversationID uuid.UUID) {
 
 	if c.redis == nil {

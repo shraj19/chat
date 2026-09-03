@@ -84,6 +84,18 @@ var (
 		},
 		[]string{"cache", "operation"}, // get, set, invalidation etc.
 	)
+
+	// CacheErrorsTotal counts cache backend errors that forced a fallback to the
+	// source of truth (DB). Distinct from a miss: a miss means the cache was
+	// healthy but empty; an error means the cache was unreachable/failed.
+	CacheErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "relay",
+			Name:      "cache_errors_total",
+			Help:      "Cache backend errors that forced a fallback to the database",
+		},
+		[]string{"cache", "operation"},
+	)
 )
 
 // Database layer
@@ -163,6 +175,7 @@ func Register(reg prometheus.Registerer) {
 		CacheHitsTotal,
 		CacheMissesTotal,
 		CacheOperationsDuration,
+		CacheErrorsTotal,
 		DBQueryDuration,
 		DBQueriesTotal,
 		RateLimitHitsTotal,

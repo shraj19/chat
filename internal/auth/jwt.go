@@ -23,20 +23,52 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+type InvalidTokenError struct {
+	Reason string
+	Err    error
+}
+
+func (e *InvalidTokenError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("invalid token: %s, underlying error: %v", e.Reason, e.Err)
+	}
+	return fmt.Sprintf("invalid token: %s", e.Reason)
+}
+
+type JWTSecretKeyTooShortError struct {
+	Length int
+}
+
+func (e *JWTSecretKeyTooShortError) Error() string {
+	return fmt.Sprintf("JWT secret key is too short; must be at least 32 characters, got %d", e.Length)
+}
+
+var ErrInvalidUserID = errors.New("invalid user ID")
+var ErrInvalidTokenDuration = errors.New("invalid token duration")
+
+type AccessTokenError struct {
+	Message string
+	Err     error
+}
+
+func (e *AccessTokenError) Error() string {
+	return e.Message
+}
+
 func NewJWTMaker(secretKey string) (*JWTMaker, error) {
 	if len(secretKey) < 32 {
-		return nil, errors.New("JWT secret key is too short; must be at least 32 characters")
+		return nil, &JWTSecretKeyTooShortError{Length: len(secretKey)}
 	}
-	
+
 	return &JWTMaker{secretKey: secretKey}, nil
 }
 
 func (m *JWTMaker) CreateToken(userID uuid.UUID, duration time.Duration) (string, error) {
 	if userID == uuid.Nil {
-		return "", fmt.Errorf("invalid user ID")
+		return "", ErrInvalidUserID
 	}
 	if duration <= 0 {
-		return "", fmt.Errorf("invalid token duration")
+		return "", ErrInvalidTokenDuration
 	}
 
 	now := time.Now()
@@ -55,27 +87,27 @@ func (m *JWTMaker) CreateToken(userID uuid.UUID, duration time.Duration) (string
 
 func (m *JWTMaker) VerifyToken(tokenStr string) (*Claims, error) {
 	if tokenStr == "" {
-		return nil, fmt.Errorf("token is empty")
+		return nil, &InvalidTokenError{Reason: "empty token string"}
 	}
 
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (any, error) {
 		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
-			return nil, fmt.Errorf("unexpected signing method")
+			return nil, &InvalidTokenError{Reason: "unexpected signing method"}
 		}
 		return []byte(m.secretKey), nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse token: %w", err)
+		return nil, &InvalidTokenError{Reason: "parse failed", Err: err}
 	}
 
 	claims, ok := token.Claims.(*Claims)
 	if !ok || !token.Valid {
-		return nil, fmt.Errorf("invalid token")
+		return nil, &InvalidTokenError{Reason: "invalid claims", Err: nil}
 	}
 
 	if claims.Subject == "" {
-		return nil, fmt.Errorf("invalid user ID in token")
+		return nil, &InvalidTokenError{Reason: "invalid subject in claims", Err: nil}
 	}
 
 	return claims, nil
@@ -89,10 +121,10 @@ func (c *Claims) UserID() (uuid.UUID, error) {
 func ExtractTokenFromCookie(r *http.Request) (string, error) {
 	cookie, err := r.Cookie("access_token")
 	if err != nil {
-		return "", fmt.Errorf("access_token cookie not found: %w", err)
+		return "", &AccessTokenError{Message: "access_token cookie not found", Err: err}
 	}
 	if cookie.Value == "" {
-		return "", fmt.Errorf("access_token cookie is empty")
+		return "", &AccessTokenError{Message: "access_token cookie is empty", Err: nil}
 	}
 	return cookie.Value, nil
 }

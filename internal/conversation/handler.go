@@ -1,3 +1,4 @@
+// Package conversation provides functionality for managing conversations.
 package conversation
 
 import (
@@ -16,6 +17,7 @@ import (
 	"chat-v2/internal/user"
 )
 
+// Handler handles HTTP requests related to conversations.
 type Handler struct {
 	repo             *Repository
 	userRepo         *user.Repository
@@ -23,6 +25,7 @@ type Handler struct {
 	participantCache *ParticipantCache
 }
 
+// NewHandler creates a new Handler for conversation-related HTTP requests.
 func NewHandler(repo *Repository, userRepo *user.Repository, presence *redis.PresenceStore, participantCache *ParticipantCache) *Handler {
 	return &Handler{
 		repo:             repo,
@@ -32,6 +35,7 @@ func NewHandler(repo *Repository, userRepo *user.Repository, presence *redis.Pre
 	}
 }
 
+// Create handles the creation of a new conversation.
 func (h *Handler) Create() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -148,6 +152,7 @@ func (h *Handler) Create() http.Handler {
 	})
 }
 
+// List handles listing conversations for the authenticated user.
 func (h *Handler) List() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -173,6 +178,7 @@ func (h *Handler) List() http.Handler {
 	})
 }
 
+// Join handles adding the authenticated user to a conversation.
 func (h *Handler) Join() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -218,6 +224,7 @@ func (h *Handler) Join() http.Handler {
 	})
 }
 
+// Leave handles removing the authenticated user from a conversation.
 func (h *Handler) Leave() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -263,6 +270,7 @@ func (h *Handler) Leave() http.Handler {
 	})
 }
 
+// Members handles listing members of a conversation.
 func (h *Handler) Members() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -303,6 +311,7 @@ func (h *Handler) Members() http.Handler {
 	})
 }
 
+// Presence handles fetching the presence status of friends for the authenticated user.
 func (h *Handler) Presence() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -341,6 +350,7 @@ func extractConversationID(r *http.Request) (uuid.UUID, error) {
 	return uuid.Parse(idStr)
 }
 
+// writeError writes a JSON error response with the given status code and message.
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

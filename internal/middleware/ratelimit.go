@@ -17,24 +17,20 @@ import (
 	"chat-v2/internal/pkg/logger"
 )
 
-/**
- *	RateLimiter is a middleware that provides rate limiting for HTTP requests.
- *	It supports both Redis-based distributed rate limiting and in-memory token bucket rate limiting.
- *	The middleware identifies clients by authenticated user ID (if available) or by IP address.
- */
+// RateLimiter rate-limits HTTP requests, using Redis for distributed limiting
+// and falling back to a per-instance in-memory token bucket when Redis is
+// unavailable. Clients are identified by authenticated user ID, else by IP.
 type RateLimiter struct {
-	redisLimiter *redis_rate.Limiter
-	memLimiters  sync.Map
-	limit        int
-	window       time.Duration
-	keyPrefix    string
-	ipStrategy   realclientip.Strategy
+	redisLimiter   *redis_rate.Limiter
+	memoryLimiters sync.Map
+	limit          int
+	window         time.Duration
+	keyPrefix      string
+	ipStrategy     realclientip.Strategy
 }
 
-/**
- *	RateLimitResult represents the result of a rate limit check.
- *	It indicates whether the request is allowed, the limit, remaining requests, and retry-after duration.
- */
+// RateLimitResult is the outcome of a rate-limit check: whether the request is
+// allowed, plus the limit, remaining budget, and retry-after hint.
 type RateLimitResult struct {
 	Allowed    bool
 	Limit      int
@@ -42,15 +38,9 @@ type RateLimitResult struct {
 	RetryAfter time.Duration
 }
 
-/**
- *	NewRateLimiter creates a new RateLimiter instance.
- *	Parameters:
- *	- redis: Redis client for distributed rate limiting. If nil, only in-memory limiting is used.
- *	- keyPrefix: Prefix for Redis keys to avoid collisions.
- *	- limit: Maximum number of requests allowed in the specified window.
- *	- window: Time duration for the rate limit window.
- *	- trustedProxies: Number of trusted proxies to consider when extracting client IP from headers.
- */
+// NewRateLimiter builds a RateLimiter. If redis is nil, only in-memory limiting
+// is used. trustedProxies controls client-IP extraction: 0 uses RemoteAddr,
+// 1+ trusts that many rightmost proxies in X-Forwarded-For.
 func NewRateLimiter(redis *goredis.Client, keyPrefix string, limit int, window time.Duration, trustedProxies int) *RateLimiter {
 	var redisLimiter *redis_rate.Limiter
 	if redis != nil {
@@ -89,14 +79,13 @@ func RateLimitWithConfig(redis *goredis.Client, keyPrefix string, limit int, win
 	return limiter.middleware()
 }
 
-
 func (l *RateLimiter) middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			identifier := l.getClientIdentifier(r)
 			key := l.keyPrefix + ":" + identifier
 
-			result := l.Allow(r.Context(), key)
+			result := l.Consume(r.Context(), key)
 
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(result.Limit))
 			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
@@ -116,11 +105,10 @@ func (l *RateLimiter) middleware() func(http.Handler) http.Handler {
 	}
 }
 
-/**
- *	Allow checks if the request is allowed under the rate limit.
- *	It first tries Redis for distributed rate limiting. If Redis is unavailable or fails, it falls back to an in-memory token bucket.
- */
-func (l *RateLimiter) Allow(ctx context.Context, key string) RateLimitResult {
+// Consume records one request against the limit for key and returns the result.
+// It tries Redis first (distributed); on Redis error it falls back to a
+// per-instance in-memory token bucket (approximate, no cross-node coordination).
+func (l *RateLimiter) Consume(ctx context.Context, key string) RateLimitResult {
 	// Try Redis first
 	if l.redisLimiter != nil {
 		result, err := l.redisLimiter.Allow(ctx, key, redis_rate.Limit{
@@ -140,14 +128,14 @@ func (l *RateLimiter) Allow(ctx context.Context, key string) RateLimitResult {
 	}
 
 	// Memory fallback using token bucket
-	return l.allowMemory(key)
+	return l.consumeMemory(key)
 }
 
-func (l *RateLimiter) allowMemory(key string) RateLimitResult {
+func (l *RateLimiter) consumeMemory(key string) RateLimitResult {
 	// Create rate based on limit/window
 	r := rate.Limit(float64(l.limit) / l.window.Seconds())
 
-	limiterObj, _ := l.memLimiters.LoadOrStore(key, rate.NewLimiter(r, l.limit))
+	limiterObj, _ := l.memoryLimiters.LoadOrStore(key, rate.NewLimiter(r, l.limit))
 	memLimiter := limiterObj.(*rate.Limiter)
 
 	if memLimiter.Allow() {

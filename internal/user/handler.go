@@ -1,10 +1,6 @@
 package user
 
 import (
-	"chat-v2/internal/auth"
-	"chat-v2/internal/domain/ent"
-	"chat-v2/internal/pkg/logger"
-	"chat-v2/internal/pkg/validator"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,6 +9,11 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"chat-v2/internal/auth"
+	"chat-v2/internal/domain/ent"
+	"chat-v2/internal/pkg/logger"
+	"chat-v2/internal/pkg/validator"
 )
 
 type Handler struct {

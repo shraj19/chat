@@ -1,11 +1,12 @@
 package realtime
 
 import (
-	"chat-v2/internal/message"
 	"context"
 	"encoding/json"
 
 	goredis "github.com/redis/go-redis/v9"
+
+	"chat-v2/internal/message"
 )
 
 type LocalPublisher struct {

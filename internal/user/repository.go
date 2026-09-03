@@ -1,12 +1,13 @@
 package user
 
 import (
-	"chat-v2/internal/domain/ent"
-	"chat-v2/internal/domain/ent/user"
 	"context"
 	"errors"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/domain/ent"
+	"chat-v2/internal/domain/ent/user"
 )
 
 var ErrUserExists = errors.New("user already exists")

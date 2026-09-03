@@ -1,15 +1,17 @@
 package realtime
 
 import (
-	"chat-v2/internal/message"
-	"chat-v2/internal/pkg/logger"
 	"encoding/json"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/message"
+	"chat-v2/internal/pkg/logger"
 )
 
+// Hub mamanges all websocket connections and routes messages to the appropriate clients.
 type Hub struct {
 	clients                 map[*Client]struct{}
 	conversationSubscribers map[uuid.UUID]map[*Client]struct{}
@@ -52,6 +54,9 @@ func NewHub() *Hub {
 	}
 }
 
+// Run starts the main event loop for the Hub.
+// It listens for register, unregister, subscribe, unsubscribe, and broadcast requests,
+// and processes them accordingly. The loop continues until the stop channel is closed.
 func (h *Hub) Run() {
 	defer close(h.done)
 
@@ -81,6 +86,8 @@ func (h *Hub) Run() {
 	}
 }
 
+// handleUnregister removes a client from the Hub, unsubscribes it from all conversations,
+// and closes its send channel. It is safe to call this method multiple times for the same client.
 func (h *Hub) handleUnregister(client *Client) {
 	if _, ok := h.clients[client]; !ok {
 		return
@@ -103,6 +110,8 @@ func (h *Hub) handleUnregister(client *Client) {
 	client.Close()
 }
 
+// handleSubscribe adds a client to the list of subscribers for a specific conversation.
+// It sends an acknowledgment back to the client once the subscription is successful.
 func (h *Hub) handleSubscribe(req subscriptionRequest) {
 	if _, ok := h.clients[req.client]; !ok {
 		h.clients[req.client] = struct{}{}
@@ -129,6 +138,8 @@ func (h *Hub) handleSubscribe(req subscriptionRequest) {
 	}
 }
 
+// handleUnsubscribe removes a client from the list of subscribers for a specific conversation.
+// It sends an acknowledgment back to the client once the unsubscription is successful.
 func (h *Hub) handleUnsubscribe(req subscriptionRequest) {
 	if clients, ok := h.conversationSubscribers[req.conversationID]; ok {
 		delete(clients, req.client)
@@ -155,6 +166,8 @@ func (h *Hub) handleUnsubscribe(req subscriptionRequest) {
 	}
 }
 
+// handleBroadcast sends a message to all clients subscribed to a specific conversation.
+// If a client's send buffer is full, it logs a warning and unregisters the client.
 func (h *Hub) handleBroadcast(req broadcastRequest) {
 	clients, ok := h.conversationSubscribers[req.conversationID]
 	if !ok {
@@ -171,6 +184,7 @@ func (h *Hub) handleBroadcast(req broadcastRequest) {
 	}
 }
 
+// Broadcast sends a message to all clients subscribed to a specific conversation.
 func (h *Hub) Broadcast(msg *message.OutMessage) {
 	if h == nil || msg == nil {
 		return
@@ -188,27 +202,37 @@ func (h *Hub) Broadcast(msg *message.OutMessage) {
 	}
 }
 
+// Subscribe adds a client to the list of subscribers for a specific conversation.
 func (h *Hub) Subscribe(client *Client, conversationID uuid.UUID) {
 	done := make(chan struct{})
 	h.subscribe <- subscriptionRequest{client: client, conversationID: conversationID, done: done}
 	<-done
 }
 
+// Unsubscribe removes a client from the list of subscribers for a specific conversation.
 func (h *Hub) Unsubscribe(client *Client, conversationID uuid.UUID) {
 	done := make(chan struct{})
 	h.unsubscribe <- subscriptionRequest{client: client, conversationID: conversationID, done: done}
 	<-done
 }
 
+// Register adds a client to the Hub, allowing it to receive messages.
 func (h *Hub) Register(client *Client)   { h.register <- client }
+
+// Unregister removes a client from the Hub, stopping it from receiving messages.
 func (h *Hub) Unregister(client *Client) { h.unregister <- client }
 
+// Stop signals the Hub t stop processing new requests and to clean up the resources.
+// It is Idempotent.
 func (h *Hub) Stop() {
 	h.once.Do(func() { close(h.stop) })
 }
 
+// Done returns a channel that is closed when the Hub has finished processing all requests and has cleaned up its resources.
 func (h *Hub) Done() <-chan struct{} { return h.done }
 
+// StartIdleChecker starts a goroutine that periodically checks for idle clients and unregisters them 
+// if they have been inactive for longer than the specified idleTimeout.
 func (h *Hub) StartIdleChecker(idleTimeout, checkInterval time.Duration) {
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()

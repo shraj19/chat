@@ -1,11 +1,6 @@
 package realtime
 
 import (
-	"chat-v2/internal/auth"
-	"chat-v2/internal/conversation"
-	"chat-v2/internal/message"
-	"chat-v2/internal/pkg/logger"
-	"chat-v2/internal/storage/redis"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -14,6 +9,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+
+	"chat-v2/internal/auth"
+	"chat-v2/internal/conversation"
+	"chat-v2/internal/message"
+	"chat-v2/internal/pkg/logger"
+	"chat-v2/internal/storage/redis"
 )
 
 const (
@@ -23,6 +24,7 @@ const (
 	maxMsgSize = 4 * 1024
 )
 
+// Handler manages websocket connections and message routing.
 type Handler struct {
 	hub              *Hub
 	convRepo         *conversation.Repository
@@ -32,6 +34,7 @@ type Handler struct {
 	upgrader         websocket.Upgrader
 }
 
+// NewHandler creates a new Handler instance with the provided dependencies.
 func NewHandler(hub *Hub, convRepo *conversation.Repository, participantCache *conversation.ParticipantCache, msgService *message.CachedService, presence *redis.PresenceStore, allowedOrigins []string) *Handler {
 	return &Handler{
 		hub:              hub,
@@ -74,6 +77,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go h.readPump(client)
 }
 
+// writePump handles outgoing messages to the client, including ping messages to keep the connection alive.
 func (h *Handler) writePump(client *Client) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
@@ -84,16 +88,22 @@ func (h *Handler) writePump(client *Client) {
 	for {
 		select {
 		case msg, ok := <-client.Send():
+			// If the channel is closed, exit the loop and close the connection.
 			if !ok {
 				return
 			}
+
+			// Set a write deadline to avoid blocking indefinitely on slow clients.
 			client.Conn().SetWriteDeadline(time.Now().Add(writeWait))
 			if err := client.Conn().WriteMessage(websocket.TextMessage, msg); err != nil {
 				return
 			}
+
+			// Update the last active timestamp for the client after sending a message.
 			client.UpdateLastActive()
 
 		case <-ticker.C:
+			// Send a ping message to the client to keep the connection alive.
 			client.Conn().SetWriteDeadline(time.Now().Add(writeWait))
 			if err := client.Conn().WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -102,8 +112,10 @@ func (h *Handler) writePump(client *Client) {
 	}
 }
 
+// readPump handles incoming messages from the client.
 func (h *Handler) readPump(client *Client) {
 	defer func() {
+		// any exit from readPump should unregister the client and close the connection
 		h.hub.Unregister(client)
 		client.Close()
 	}()
@@ -140,6 +152,7 @@ func (h *Handler) readPump(client *Client) {
 	}
 }
 
+// incomingMessage represents the structure of messages received from clients over the websocket connection.
 type incomingMessage struct {
 	Type           string    `json:"type"`
 	ConversationID uuid.UUID `json:"conversation_id"`
@@ -148,6 +161,7 @@ type incomingMessage struct {
 	ClientID       string    `json:"client_id"`
 }
 
+// handleMessage processes incoming messages based on their type and performs the appropriate actions.
 func (h *Handler) handleMessage(client *Client, data []byte) {
 	var msg incomingMessage
 	if err := json.Unmarshal(data, &msg); err != nil || msg.ConversationID == uuid.Nil {
@@ -159,6 +173,7 @@ func (h *Handler) handleMessage(client *Client, data []byte) {
 		if msg.Content == "" {
 			return
 		}
+		
 		_, err := h.msgService.Create(context.Background(), client.UserID(), msg.ConversationID, msg.Content, msg.Username, msg.ClientID)
 		if err != nil {
 			logger.Error("Failed to create message", "error", err)

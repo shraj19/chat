@@ -21,7 +21,7 @@ func Middleware(maker *JWTMaker) func(http.Handler) http.Handler {
 
 			userID, err := claims.UserID()
 			if err != nil {
-				http.Error(w, "invalid user ID in token", http.StatusUnauthorized)
+				http.Error(w, "Invalid user ID in token", http.StatusUnauthorized)
 				return
 			}
 			ctx := SetUserInContext(r.Context(), userID)

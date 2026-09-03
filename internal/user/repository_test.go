@@ -1,14 +1,15 @@
 package user_test
 
 import (
-	"chat-v2/internal/domain/ent"
-	"chat-v2/internal/testutil"
-	"chat-v2/internal/user"
 	"context"
 	"os"
 	"testing"
 
 	"github.com/google/uuid"
+
+	"chat-v2/internal/domain/ent"
+	"chat-v2/internal/testutil"
+	"chat-v2/internal/user"
 )
 
 var testDSN string
@@ -68,10 +69,10 @@ func TestCreate_Duplicate(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name      string
-		first     [3]string // username, hash, email
-		second    [3]string
-		wantErr   error
+		name    string
+		first   [3]string // username, hash, email
+		second  [3]string
+		wantErr error
 	}{
 		{
 			name:    "duplicate username",
@@ -112,9 +113,9 @@ func TestGetByID(t *testing.T) {
 	created, _ := repo.Create(ctx, "charlie", "hash", "charlie@example.com")
 
 	tests := []struct {
-		name    string
-		id      uuid.UUID
-		wantErr bool
+		name       string
+		id         uuid.UUID
+		wantErr    bool
 		isNotFound bool
 	}{
 		{"exists", created.ID, false, false},
