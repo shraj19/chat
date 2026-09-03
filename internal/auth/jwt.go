@@ -63,6 +63,7 @@ func NewJWTMaker(secretKey string) (*JWTMaker, error) {
 	return &JWTMaker{secretKey: secretKey}, nil
 }
 
+// CreateToken generates a new JWT token for the given user ID and duration.
 func (m *JWTMaker) CreateToken(userID uuid.UUID, duration time.Duration) (string, error) {
 	if userID == uuid.Nil {
 		return "", ErrInvalidUserID
@@ -85,6 +86,7 @@ func (m *JWTMaker) CreateToken(userID uuid.UUID, duration time.Duration) (string
 	return token.SignedString([]byte(m.secretKey))
 }
 
+// VerifyToken verifies the provided JWT token string and returns the claims if valid.
 func (m *JWTMaker) VerifyToken(tokenStr string) (*Claims, error) {
 	if tokenStr == "" {
 		return nil, &InvalidTokenError{Reason: "empty token string"}
