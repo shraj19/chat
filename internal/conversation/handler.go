@@ -12,6 +12,7 @@ import (
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/domain/ent/conversation"
+	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 	"chat-v2/internal/storage/redis"
 	"chat-v2/internal/user"
@@ -39,13 +40,13 @@ func NewHandler(repo *Repository, userRepo *user.Repository, presence *redis.Pre
 func (h *Handler) Create() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
@@ -57,7 +58,7 @@ func (h *Handler) Create() http.Handler {
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeError(w, http.StatusBadRequest, "Invalid request body")
+			httpx.WriteError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
 
@@ -66,13 +67,13 @@ func (h *Handler) Create() http.Handler {
 		}
 
 		if req.Type == "group" && strings.TrimSpace(req.Title) == "" {
-			writeError(w, http.StatusBadRequest, "Title is required for group conversations")
+			httpx.WriteError(w, http.StatusBadRequest, "Title is required for group conversations")
 			return
 		}
 
 		currentUser, err := h.userRepo.GetByID(r.Context(), userID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to get user")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to get user")
 			return
 		}
 
@@ -98,7 +99,7 @@ func (h *Handler) Create() http.Handler {
 		}
 
 		if req.Type == "private" && len(usernameOrder) != 2 {
-			writeError(w, http.StatusBadRequest, "Private conversations must have exactly 2 participants")
+			httpx.WriteError(w, http.StatusBadRequest, "Private conversations must have exactly 2 participants")
 			return
 		}
 
@@ -126,8 +127,7 @@ func (h *Handler) Create() http.Handler {
 
 			// Check if exists
 			if existing, err := h.repo.GetByCanonicalName(r.Context(), canonicalName); err == nil && existing != nil {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(map[string]any{"conversation": existing, "created": false})
+				httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversation": existing, "created": false})
 				return
 			}
 		}
@@ -136,19 +136,16 @@ func (h *Handler) Create() http.Handler {
 		if err != nil {
 			if errors.Is(err, ErrConversationExists) && canonicalName != "" {
 				if existing, _ := h.repo.GetByCanonicalName(r.Context(), canonicalName); existing != nil {
-					w.Header().Set("Content-Type", "application/json")
-					json.NewEncoder(w).Encode(map[string]any{"conversation": existing, "created": false})
+					httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversation": existing, "created": false})
 					return
 				}
 			}
 			logger.Error("Failed to create conversation", "error", err)
-			writeError(w, http.StatusInternalServerError, "Failed to create conversation")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to create conversation")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]any{"conversation": conv, "created": true})
+		httpx.WriteJSON(w, http.StatusCreated, map[string]any{"conversation": conv, "created": true})
 	})
 }
 
@@ -156,25 +153,24 @@ func (h *Handler) Create() http.Handler {
 func (h *Handler) List() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		convs, err := h.repo.GetByUserIDWithDisplay(r.Context(), userID)
 		if err != nil {
 			logger.Error("Failed to list conversations", "error", err)
-			writeError(w, http.StatusInternalServerError, "Failed to list conversations")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to list conversations")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"conversations": convs})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversations": convs})
 	})
 }
 
@@ -182,36 +178,36 @@ func (h *Handler) List() http.Handler {
 func (h *Handler) Join() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		convID, err := extractConversationID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpx.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		conv, err := h.repo.GetByID(r.Context(), convID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "Conversation not found")
+			httpx.WriteError(w, http.StatusNotFound, "Conversation not found")
 			return
 		}
 
 		if conv.Type == conversation.TypePrivate {
-			writeError(w, http.StatusForbidden, "Cannot join private conversations")
+			httpx.WriteError(w, http.StatusForbidden, "Cannot join private conversations")
 			return
 		}
 
 		if err := h.repo.AddParticipant(r.Context(), convID, userID); err != nil {
 			logger.Error("Failed to join conversation", "error", err)
-			writeError(w, http.StatusInternalServerError, "Failed to join conversation")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to join conversation")
 			return
 		}
 
@@ -219,8 +215,7 @@ func (h *Handler) Join() http.Handler {
 			h.participantCache.Add(r.Context(), convID, userID)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"message": "Joined conversation"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Joined conversation"})
 	})
 }
 
@@ -228,36 +223,36 @@ func (h *Handler) Join() http.Handler {
 func (h *Handler) Leave() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		convID, err := extractConversationID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpx.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		conv, err := h.repo.GetByID(r.Context(), convID)
 		if err != nil {
-			writeError(w, http.StatusNotFound, "Conversation not found")
+			httpx.WriteError(w, http.StatusNotFound, "Conversation not found")
 			return
 		}
 
 		if conv.Type == conversation.TypePrivate {
-			writeError(w, http.StatusForbidden, "Cannot leave private conversations")
+			httpx.WriteError(w, http.StatusForbidden, "Cannot leave private conversations")
 			return
 		}
 
 		if err := h.repo.RemoveParticipant(r.Context(), convID, userID); err != nil {
 			logger.Error("Failed to leave conversation", "error", err)
-			writeError(w, http.StatusInternalServerError, "Failed to leave conversation")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to leave conversation")
 			return
 		}
 
@@ -265,8 +260,7 @@ func (h *Handler) Leave() http.Handler {
 			h.participantCache.Remove(r.Context(), convID, userID)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"message": "Left conversation"})
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Left conversation"})
 	})
 }
 
@@ -274,40 +268,39 @@ func (h *Handler) Leave() http.Handler {
 func (h *Handler) Members() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		convID, err := extractConversationID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpx.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		isParticipant, err := h.repo.IsParticipant(r.Context(), convID, userID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to check membership")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to check membership")
 			return
 		}
 		if !isParticipant {
-			writeError(w, http.StatusForbidden, "Not a participant")
+			httpx.WriteError(w, http.StatusForbidden, "Not a participant")
 			return
 		}
 
 		participants, err := h.repo.GetParticipants(r.Context(), convID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to get participants")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to get participants")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"participants": participants})
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"participants": participants})
 	})
 }
 
@@ -315,30 +308,29 @@ func (h *Handler) Members() http.Handler {
 func (h *Handler) Presence() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		friends, err := h.repo.GetFriends(r.Context(), userID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to get friends")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to get friends")
 			return
 		}
 
 		presenceInfo, err := h.presence.GetBulk(r.Context(), friends)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to get presence")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to get presence")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(presenceInfo)
+		httpx.WriteJSON(w, http.StatusOK, presenceInfo)
 	})
 }
 
@@ -348,11 +340,4 @@ func extractConversationID(r *http.Request) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("conversation_id is required")
 	}
 	return uuid.Parse(idStr)
-}
-
-// writeError writes a JSON error response with the given status code and message.
-func writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }

@@ -1,24 +1,24 @@
 package message
 
 import (
-	"time"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/conversation"
 	"chat-v2/internal/metrics"
+	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 )
 
 type Handler struct {
 	repo             *Repository
 	convRepo         *conversation.Repository
-	msgCache            MsgCache
+	msgCache         MsgCache
 	participantCache *conversation.ParticipantCache
 }
 
@@ -31,7 +31,7 @@ func NewHandler(
 	return &Handler{
 		repo:             repo,
 		convRepo:         convRepo,
-		msgCache:            msgCache,
+		msgCache:         msgCache,
 		participantCache: participantCache,
 	}
 }
@@ -39,29 +39,29 @@ func NewHandler(
 func (h *Handler) List() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			httpx.WriteError(w, http.StatusMethodNotAllowed, "Method not allowed")
 			return
 		}
 
 		userID, ok := auth.GetUserFromContext(r.Context())
 		if !ok {
-			writeError(w, http.StatusUnauthorized, "Unauthorized")
+			httpx.WriteError(w, http.StatusUnauthorized, "Unauthorized")
 			return
 		}
 
 		convID, err := extractConversationID(r)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			httpx.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 
 		isParticipant, err := h.participantCache.IsParticipant(r.Context(), convID, userID)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to check membership")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to check membership")
 			return
 		}
 		if !isParticipant {
-			writeError(w, http.StatusForbidden, "Not a participant")
+			httpx.WriteError(w, http.StatusForbidden, "Not a participant")
 			return
 		}
 
@@ -69,7 +69,7 @@ func (h *Handler) List() http.Handler {
 		if beforeStr := r.URL.Query().Get("before"); beforeStr != "" {
 			before, err = DecodeCursor(beforeStr)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, "Invalid cursor")
+				httpx.WriteError(w, http.StatusBadRequest, "Invalid cursor")
 				return
 			}
 		}
@@ -89,8 +89,7 @@ func (h *Handler) List() http.Handler {
 				metrics.CacheOperationsDuration.WithLabelValues("message").Observe(time.Since(start).Seconds())
 			}()
 			if cached, err := h.msgCache.GetRecent(r.Context(), convID); err == nil && len(cached) > 0 {
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(&ListResponse{Messages: cached})
+				httpx.WriteJSON(w, http.StatusOK, map[string]any{"messages": cached})
 
 				// Cache hit
 				metrics.CacheHitsTotal.WithLabelValues("message").Inc()
@@ -104,12 +103,11 @@ func (h *Handler) List() http.Handler {
 		resp, err := h.repo.List(r.Context(), convID, before, limit)
 		if err != nil {
 			logger.Error("Failed to list messages", "error", err)
-			writeError(w, http.StatusInternalServerError, "Failed to list messages")
+			httpx.WriteError(w, http.StatusInternalServerError, "Failed to list messages")
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"messages": resp})
 	})
 }
 
@@ -119,10 +117,4 @@ func extractConversationID(r *http.Request) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("conversation_id is required")
 	}
 	return uuid.Parse(idStr)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
