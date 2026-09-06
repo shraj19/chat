@@ -8,6 +8,7 @@ import (
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
 
+	"chat-v2/internal/metrics"
 	"chat-v2/internal/pkg/logger"
 )
 
@@ -38,15 +39,18 @@ func NewClient(conn *websocket.Conn, userID uuid.UUID, username string) *Client 
 // Close closes the websocket connection and cleans up resources.
 // It is safe to call Close multiple times; subsequent calls will have no effect.
 func (c *Client) Close() {
-	// sync.once ensures that close logic is executed only once, even if Close is called multiple times.
+	// sync.once ensures Idempotency.
 	c.closeOnce.Do(func() {
+		// Decrement the active WebSocket connections metric
+		metrics.WSConnectionsActive.Dec()
+
 		if c.conn != nil {
 			c.conn.Close()
 		}
 	})
 }
 
-// SendMessage sends a message to the client through the send channel of client. 
+// SendMessage sends a message to the client through the send channel of client.
 // If the send buffer is full, it logs a warning and drops the message.
 func (c *Client) SendMessage(msg []byte) {
 	select {

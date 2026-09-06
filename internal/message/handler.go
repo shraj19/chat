@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/google/uuid"
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/conversation"
-	"chat-v2/internal/metrics"
 	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 )
@@ -36,6 +34,7 @@ func NewHandler(
 	}
 }
 
+// List handles the listing of messages in a conversation with pagination support.
 func (h *Handler) List() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -81,23 +80,13 @@ func (h *Handler) List() http.Handler {
 			}
 		}
 
-		// Try cache for first page
+		// Try cache for first page. GetRecent records its own hit/miss/duration
+		// metrics internally, so the handler doesn't instrument here.
 		if before == nil && h.msgCache != nil {
-
-			start := time.Now()
-			defer func() {
-				metrics.CacheOperationsDuration.WithLabelValues("message").Observe(time.Since(start).Seconds())
-			}()
 			if cached, err := h.msgCache.GetRecent(r.Context(), convID); err == nil && len(cached) > 0 {
 				httpx.WriteJSON(w, http.StatusOK, map[string]any{"messages": cached})
-
-				// Cache hit
-				metrics.CacheHitsTotal.WithLabelValues("message").Inc()
 				return
 			}
-
-			// Cache miss
-			metrics.CacheMissesTotal.WithLabelValues("message").Inc()
 		}
 
 		resp, err := h.repo.List(r.Context(), convID, before, limit)

@@ -14,6 +14,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"chat-v2/internal/auth"
+	"chat-v2/internal/metrics"
 	"chat-v2/internal/pkg/logger"
 )
 
@@ -25,7 +26,7 @@ type RateLimiter struct {
 	memoryLimiters sync.Map
 	limit          int
 	window         time.Duration
-	keyPrefix      string
+	keyPrefix      string // prefix for Redis keys
 	ipStrategy     realclientip.Strategy
 }
 
@@ -91,6 +92,9 @@ func (l *RateLimiter) middleware() func(http.Handler) http.Handler {
 			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(result.Remaining))
 
 			if !result.Allowed {
+				// Increment Prometheus metric for rate limit hits
+				metrics.RateLimitHitsTotal.WithLabelValues(l.keyPrefix).Inc()
+
 				retryAfter := int(result.RetryAfter.Seconds())
 				retryAfter = max(retryAfter, 1) // Ensure at least 1 second
 

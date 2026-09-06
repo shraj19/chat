@@ -49,6 +49,19 @@ var (
 		},
 		[]string{"direction"}, // inbound or outbound
 	)
+
+	// WSMessageProcessingDuration measures how long an inbound WebSocket frame
+	// takes to handle (DB insert, publish, etc.), labeled by message type.
+	// Rejected (rate-limited) frames are NOT observed — they do no work.
+	WSMessageProcessingDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "relay",
+			Name:      "ws_message_processing_duration_seconds",
+			Help:      "Inbound WebSocket message handling latency in seconds",
+			Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 15), // 0.1ms to ~3s
+		},
+		[]string{"type"}, // message, subscribe, unsubscribe
+	)
 )
 
 // Cache layer
@@ -172,6 +185,7 @@ func Register(reg prometheus.Registerer) {
 		HTTPRequestsDuration,
 		WSConnectionsActive,
 		WSMessagesTotal,
+		WSMessageProcessingDuration,
 		CacheHitsTotal,
 		CacheMissesTotal,
 		CacheOperationsDuration,
@@ -181,3 +195,4 @@ func Register(reg prometheus.Registerer) {
 		RateLimitHitsTotal,
 	)
 }
+

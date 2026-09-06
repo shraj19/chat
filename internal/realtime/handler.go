@@ -15,6 +15,7 @@ import (
 	"chat-v2/internal/message"
 	"chat-v2/internal/pkg/logger"
 	"chat-v2/internal/storage/redis"
+	"chat-v2/internal/metrics"
 )
 
 const (
@@ -22,6 +23,11 @@ const (
 	pongWait   = 60 * time.Second
 	pingPeriod = (pongWait * 9) / 10
 	maxMsgSize = 4 * 1024
+)
+
+var (
+	newline = []byte{'\n'}
+	space   = []byte{' '}
 )
 
 // Handler manages websocket connections and message routing.
@@ -72,6 +78,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	username := r.URL.Query().Get("username")
 	client := NewClient(conn, userID, username)
 
+	// Increment the active WebSocket connections metric when a new client connects.
+	metrics.WSConnectionsActive.Inc()
+
+	// We can't defer the decrement here because we want to ensure it happens when 
+	// the client disconnects, not when this function exits.
+	// decrement is in client.Close() which is called in readPump and writePump when the connection is closed.
+	// also it is idempotent, so if it is called multiple times, it will not decrement below 0.
+
 	h.hub.Register(client)
 	go h.writePump(client)
 	go h.readPump(client)
@@ -88,16 +102,36 @@ func (h *Handler) writePump(client *Client) {
 	for {
 		select {
 		case msg, ok := <-client.Send():
-			// If the channel is closed, exit the loop and close the connection.
+			clientConn := client.Conn()
+
+			// If a write operation takes longer than writeWait, the connection is closed to prevent hanging.
+			clientConn.SetWriteDeadline(time.Now().Add(writeWait))
+
 			if !ok {
+				// The channel is closed, so we send a close message to the client and exit.
+				clientConn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			// Set a write deadline to avoid blocking indefinitely on slow clients.
-			client.Conn().SetWriteDeadline(time.Now().Add(writeWait))
-			if err := client.Conn().WriteMessage(websocket.TextMessage, msg); err != nil {
+			w, err := clientConn.NextWriter(websocket.TextMessage)
+			if err != nil {
 				return
 			}
+			w.Write(msg)
+
+			// Add queued chat messages to the current websocket message.
+			n := len(client.send)
+			for range n {
+				w.Write(newline)
+				w.Write(<-client.send)
+			}
+
+			if err := w.Close(); err != nil {
+				return
+			}
+
+			// Count all messages flushed in this frame (the first plus any batched).
+			metrics.WSMessagesTotal.WithLabelValues("outbound").Add(float64(n + 1))
 
 			// Update the last active timestamp for the client after sending a message.
 			client.UpdateLastActive()
@@ -128,6 +162,7 @@ func (h *Handler) readPump(client *Client) {
 	client.Conn().SetReadDeadline(time.Now().Add(pongWait))
 	client.Conn().SetPongHandler(func(string) error {
 		client.Conn().SetReadDeadline(time.Now().Add(pongWait))
+		// Update the last active timestamp for the client when a pong is received.
 		client.UpdateLastActive()
 		if h.presence != nil {
 			go h.presence.Update(context.Background(), client.UserID())
@@ -137,11 +172,21 @@ func (h *Handler) readPump(client *Client) {
 
 	for {
 		_, data, err := client.Conn().ReadMessage()
+		// errors from ReadMessage indicate that the connection has been closed or an error occurred,
+		// so we exit the loop and close the connection.
 		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				logger.Error("Unexpected WebSocket close error", "error", err)
+			}
 			return
 		}
 
+		// Count every frame received off the wire (before the rate-limit gate,
+		// so rejected/abusive traffic stays visible in inbound throughput).
+		metrics.WSMessagesTotal.WithLabelValues("inbound").Inc()
+
 		if !client.AllowMessage() {
+			metrics.RateLimitHitsTotal.WithLabelValues("ws").Inc()
 			errMsg, _ := json.Marshal(map[string]string{"type": "error", "message": "Rate limit exceeded"})
 			client.SendMessage(errMsg)
 			continue
@@ -168,12 +213,19 @@ func (h *Handler) handleMessage(client *Client, data []byte) {
 		return
 	}
 
+	// Time how long we take to handle this frame, labeled by type. Only valid,
+	// processed frames are observed (malformed ones returned above).
+	start := time.Now()
+	defer func() {
+		metrics.WSMessageProcessingDuration.WithLabelValues(msg.Type).Observe(time.Since(start).Seconds())
+	}()
+
 	switch msg.Type {
 	case "message":
 		if msg.Content == "" {
 			return
 		}
-		
+
 		_, err := h.msgService.Create(context.Background(), client.UserID(), msg.ConversationID, msg.Content, msg.Username, msg.ClientID)
 		if err != nil {
 			logger.Error("Failed to create message", "error", err)
@@ -183,9 +235,13 @@ func (h *Handler) handleMessage(client *Client, data []byte) {
 		if ok, _ := h.participantCache.IsParticipant(context.Background(), msg.ConversationID, client.UserID()); ok {
 			h.hub.Subscribe(client, msg.ConversationID)
 		}
+		// Send an acknowledgment back to the client for the subscription request.
+		// or send an error message if the subscription failed.
 
 	case "unsubscribe":
 		h.hub.Unsubscribe(client, msg.ConversationID)
+		// Send an acknowledgment back to the client for the unsubscription request.
+		// or send an error message if the unsubscription failed.
 	}
 }
 
