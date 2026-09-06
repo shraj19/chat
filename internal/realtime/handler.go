@@ -13,9 +13,9 @@ import (
 	"chat-v2/internal/auth"
 	"chat-v2/internal/conversation"
 	"chat-v2/internal/message"
+	"chat-v2/internal/metrics"
 	"chat-v2/internal/pkg/logger"
 	"chat-v2/internal/storage/redis"
-	"chat-v2/internal/metrics"
 )
 
 const (
@@ -81,7 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Increment the active WebSocket connections metric when a new client connects.
 	metrics.WSConnectionsActive.Inc()
 
-	// We can't defer the decrement here because we want to ensure it happens when 
+	// We can't defer the decrement here because we want to ensure it happens when
 	// the client disconnects, not when this function exits.
 	// decrement is in client.Close() which is called in readPump and writePump when the connection is closed.
 	// also it is idempotent, so if it is called multiple times, it will not decrement below 0.

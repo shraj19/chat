@@ -2,8 +2,26 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 )
+
+// ObserveDBQuery records duration and success/error for a DB operation.
+// Usage:
+//
+//	start := time.Now()
+//	m, err := r.client.Message.Create()...Save(ctx)
+//	metrics.ObserveDBQuery("create_message", start, err)
+func ObserveDBQuery(operation string, start time.Time, err error) {
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	DBQueryDuration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
+	DBQueriesTotal.WithLabelValues(operation, status).Inc()
+}
+
 
 // HTTP layer
 var (

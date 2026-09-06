@@ -10,6 +10,7 @@ import (
 
 	"chat-v2/internal/domain/ent"
 	"chat-v2/internal/domain/ent/message"
+	"chat-v2/internal/metrics"
 )
 
 type Repository struct {
@@ -58,15 +59,21 @@ func DecodeCursor(s string) (*Cursor, error) {
 }
 
 func (r *Repository) Create(ctx context.Context, conversationID, senderID uuid.UUID, content string) (*ent.Message, error) {
-	return r.client.Message.Create().
+	start := time.Now()
+	m, err := r.client.Message.Create().
 		SetConversationID(conversationID).
 		SetSenderID(senderID).
 		SetContent(content).
 		Save(ctx)
+	metrics.ObserveDBQuery("create_message", start, err)
+	return m, err
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*ent.Message, error) {
-	return r.client.Message.Get(ctx, id)
+	start := time.Now()
+	m, err := r.client.Message.Get(ctx, id)
+	metrics.ObserveDBQuery("get_message", start, err)
+	return m, err
 }
 
 func (r *Repository) List(ctx context.Context, conversationID uuid.UUID, before *Cursor, limit int) (*ListResponse, error) {
@@ -92,7 +99,9 @@ func (r *Repository) List(ctx context.Context, conversationID uuid.UUID, before 
 		)
 	}
 
+	start := time.Now()
 	msgs, err := query.All(ctx)
+	metrics.ObserveDBQuery("list_messages", start, err)
 	if err != nil {
 		return nil, err
 	}
