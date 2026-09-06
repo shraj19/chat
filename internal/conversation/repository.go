@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -10,6 +11,7 @@ import (
 	"chat-v2/internal/domain/ent/conversation"
 	"chat-v2/internal/domain/ent/conversationparticipant"
 	"chat-v2/internal/domain/ent/user"
+	"chat-v2/internal/metrics"
 )
 
 var ErrConversationExists = errors.New("conversation already exists")
@@ -37,7 +39,9 @@ func (r *Repository) Create(ctx context.Context, convType, title, displayName, c
 		builder.SetCanonicalName(canonicalName)
 	}
 
+	start := time.Now()
 	conv, err := builder.Save(ctx)
+	metrics.ObserveDBQuery("create_conversation", start, err)
 	if err != nil {
 		if ent.IsConstraintError(err) {
 			return nil, ErrConversationExists
@@ -48,6 +52,13 @@ func (r *Repository) Create(ctx context.Context, convType, title, displayName, c
 }
 
 func (r *Repository) CreateWithParticipants(ctx context.Context, convType, title, displayName, canonicalName string, usernames []string) (*ent.Conversation, error) {
+	start := time.Now()
+	conv, err := r.createWithParticipants(ctx, convType, title, displayName, canonicalName, usernames)
+	metrics.ObserveDBQuery("create_conversation_tx", start, err)
+	return conv, err
+}
+
+func (r *Repository) createWithParticipants(ctx context.Context, convType, title, displayName, canonicalName string, usernames []string) (*ent.Conversation, error) {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return nil, err
@@ -109,23 +120,32 @@ func (r *Repository) CreateWithParticipants(ctx context.Context, convType, title
 }
 
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*ent.Conversation, error) {
-	return r.client.Conversation.Get(ctx, id)
+	start := time.Now()
+	c, err := r.client.Conversation.Get(ctx, id)
+	metrics.ObserveDBQuery("get_conversation", start, err)
+	return c, err
 }
 
 func (r *Repository) GetByCanonicalName(ctx context.Context, canonicalName string) (*ent.Conversation, error) {
-	return r.client.Conversation.Query().
+	start := time.Now()
+	c, err := r.client.Conversation.Query().
 		Where(
 			conversation.CanonicalNameEQ(canonicalName),
 			conversation.TypeEQ(conversation.TypePrivate),
 		).
 		Only(ctx)
+	metrics.ObserveDBQuery("get_conversation_by_canonical_name", start, err)
+	return c, err
 }
 
 func (r *Repository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*ent.Conversation, error) {
-	return r.client.Conversation.Query().
+	start := time.Now()
+	convs, err := r.client.Conversation.Query().
 		Where(conversation.HasParticipantsWith(conversationparticipant.UserIDEQ(userID))).
 		Order(ent.Asc(conversation.FieldCreatedAt)).
 		All(ctx)
+	metrics.ObserveDBQuery("list_conversations", start, err)
+	return convs, err
 }
 
 type ConversationWithDisplay struct {
@@ -134,6 +154,7 @@ type ConversationWithDisplay struct {
 }
 
 func (r *Repository) GetByUserIDWithDisplay(ctx context.Context, userID uuid.UUID) ([]*ConversationWithDisplay, error) {
+	start := time.Now()
 	convs, err := r.client.Conversation.Query().
 		Where(conversation.HasParticipantsWith(conversationparticipant.UserIDEQ(userID))).
 		WithParticipants(func(q *ent.ConversationParticipantQuery) {
@@ -141,6 +162,7 @@ func (r *Repository) GetByUserIDWithDisplay(ctx context.Context, userID uuid.UUI
 		}).
 		Order(ent.Asc(conversation.FieldCreatedAt)).
 		All(ctx)
+	metrics.ObserveDBQuery("list_conversations_with_display", start, err)
 	if err != nil {
 		return nil, err
 	}
@@ -168,27 +190,33 @@ func (r *Repository) GetByUserIDWithDisplay(ctx context.Context, userID uuid.UUI
 }
 
 func (r *Repository) AddParticipant(ctx context.Context, conversationID, userID uuid.UUID) error {
+	start := time.Now()
 	_, err := r.client.ConversationParticipant.Create().
 		SetConversationID(conversationID).
 		SetUserID(userID).
 		Save(ctx)
+	metrics.ObserveDBQuery("add_participant", start, err)
 	return err
 }
 
 func (r *Repository) RemoveParticipant(ctx context.Context, conversationID, userID uuid.UUID) error {
+	start := time.Now()
 	_, err := r.client.ConversationParticipant.Delete().
 		Where(
 			conversationparticipant.ConversationIDEQ(conversationID),
 			conversationparticipant.UserIDEQ(userID),
 		).
 		Exec(ctx)
+	metrics.ObserveDBQuery("remove_participant", start, err)
 	return err
 }
 
 func (r *Repository) GetParticipants(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
+	start := time.Now()
 	participants, err := r.client.ConversationParticipant.Query().
 		Where(conversationparticipant.ConversationIDEQ(conversationID)).
 		All(ctx)
+	metrics.ObserveDBQuery("get_participants", start, err)
 	if err != nil {
 		return nil, err
 	}
@@ -201,15 +229,19 @@ func (r *Repository) GetParticipants(ctx context.Context, conversationID uuid.UU
 }
 
 func (r *Repository) IsParticipant(ctx context.Context, conversationID, userID uuid.UUID) (bool, error) {
-	return r.client.ConversationParticipant.Query().
+	start := time.Now()
+	ok, err := r.client.ConversationParticipant.Query().
 		Where(
 			conversationparticipant.ConversationIDEQ(conversationID),
 			conversationparticipant.UserIDEQ(userID),
 		).
 		Exist(ctx)
+	metrics.ObserveDBQuery("is_participant", start, err)
+	return ok, err
 }
 
 func (r *Repository) GetFriends(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	start := time.Now()
 	convs, err := r.client.Conversation.Query().
 		Where(
 			conversation.TypeEQ(conversation.TypePrivate),
@@ -217,6 +249,7 @@ func (r *Repository) GetFriends(ctx context.Context, userID uuid.UUID) ([]uuid.U
 		).
 		WithParticipants().
 		All(ctx)
+	metrics.ObserveDBQuery("get_friends", start, err)
 	if err != nil {
 		return nil, err
 	}
