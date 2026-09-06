@@ -1,0 +1,12 @@
+# Prometheus configuration for local Relay development
+# Scrapes the Go backend's /metrics endpoint
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "relay"
+    static_configs:
+      - targets: ["app:8080"]
+    # Metrics path defaults to /metrics
