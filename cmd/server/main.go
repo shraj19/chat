@@ -127,31 +127,31 @@ func main() {
 	wsRL := middleware.RateLimitWithConfig(redisClient, "ws", 10, time.Minute, cfg.TrustedProxies)
 
 	// Health
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
 	// Auth routes
-	mux.Handle("/api/signup", signupRL(userHandler.SignUp()))
-	mux.Handle("/api/login", loginRL(userHandler.Login()))
-	mux.Handle("/api/logout", authMW(userHandler.Logout()))
-	mux.Handle("/api/me", apiRL(authMW(userHandler.Me())))
-	mux.Handle("/api/users/search", apiRL(authMW(userHandler.Search())))
+	mux.Handle("POST /api/signup", signupRL(userHandler.SignUp()))
+	mux.Handle("POST /api/login", loginRL(userHandler.Login()))
+	mux.Handle("POST /api/logout", authMW(userHandler.Logout()))
+	mux.Handle("GET /api/me", apiRL(authMW(userHandler.Me())))
+	mux.Handle("GET /api/users/search", apiRL(authMW(userHandler.Search())))
 
 	// Conversation routes
-	mux.Handle("/api/conversation/create", apiRL(authMW(convHandler.Create())))
-	mux.Handle("/api/conversation/list", apiRL(authMW(convHandler.List())))
-	mux.Handle("/api/conversation/join", apiRL(authMW(convHandler.Join())))
-	mux.Handle("/api/conversation/leave", apiRL(authMW(convHandler.Leave())))
-	mux.Handle("/api/conversation/members", apiRL(authMW(convHandler.Members())))
-	mux.Handle("/api/conversation/messages", apiRL(authMW(msgHandler.List())))
+	mux.Handle("POST /api/conversation/create", apiRL(authMW(convHandler.Create())))
+	mux.Handle("GET /api/conversation/list", apiRL(authMW(convHandler.List())))
+	mux.Handle("POST /api/conversation/join", apiRL(authMW(convHandler.Join())))
+	mux.Handle("POST /api/conversation/leave", apiRL(authMW(convHandler.Leave())))
+	mux.Handle("GET /api/conversation/members", apiRL(authMW(convHandler.Members())))
+	mux.Handle("GET /api/conversation/messages", apiRL(authMW(msgHandler.List())))
 
 	// Presence
-	mux.Handle("/api/presence", apiRL(authMW(convHandler.Presence())))
+	mux.Handle("GET /api/presence", apiRL(authMW(convHandler.Presence())))
 
 	// WebSocket
-	mux.Handle("/api/ws", wsRL(authMW(wsHandler)))
+	mux.Handle("GET /api/ws", wsRL(authMW(wsHandler)))
 
 	// Metrics endpoint
 	mux.Handle("/metrics", promhttp.Handler())
