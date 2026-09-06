@@ -11,7 +11,7 @@ import (
 	"chat-v2/internal/pkg/logger"
 )
 
-// Hub mamanges all websocket connections and routes messages to the appropriate clients.
+// Hub manages all websocket connections and routes messages to the appropriate clients.
 type Hub struct {
 	clients                 map[*Client]struct{}
 	conversationSubscribers map[uuid.UUID]map[*Client]struct{}
@@ -26,6 +26,9 @@ type Hub struct {
 	stop chan struct{}
 	done chan struct{}
 	once sync.Once
+
+	idleTimeout      time.Duration
+	checkIdleClients chan struct{}
 }
 
 type subscriptionRequest struct {
@@ -51,6 +54,8 @@ func NewHub() *Hub {
 		broadcast:               make(chan broadcastRequest),
 		stop:                    make(chan struct{}),
 		done:                    make(chan struct{}),
+		checkIdleClients:        make(chan struct{}),
+		idleTimeout:             5 * time.Minute, // Default idle timeout; can be adjusted as needed
 	}
 }
 
@@ -77,6 +82,14 @@ func (h *Hub) Run() {
 		case req := <-h.broadcast:
 			h.handleBroadcast(req)
 
+		case <-h.checkIdleClients:
+			now := time.Now()
+			for client := range h.clients {
+				if now.Sub(client.LastActive()) > h.idleTimeout {
+					h.handleUnregister(client)
+				}
+			}
+
 		case <-h.stop:
 			for client := range h.clients {
 				h.handleUnregister(client)
@@ -87,7 +100,11 @@ func (h *Hub) Run() {
 }
 
 // handleUnregister removes a client from the Hub, unsubscribes it from all conversations,
-// and closes its send channel. It is safe to call this method multiple times for the same client.
+// and closes its send channel.
+//
+// Safe to call multiple times — the map check guards against double-close.
+// Invariant: SendMessage must only be called from inside Hub instance (via handleBroadcast),
+// never after unregister. If SendMessage becomes public/external, add sync.Once protection.
 func (h *Hub) handleUnregister(client *Client) {
 	if _, ok := h.clients[client]; !ok {
 		return
@@ -107,7 +124,6 @@ func (h *Hub) handleUnregister(client *Client) {
 
 	delete(h.clients, client)
 	close(client.send)
-	client.Close()
 }
 
 // handleSubscribe adds a client to the list of subscribers for a specific conversation.
@@ -217,12 +233,12 @@ func (h *Hub) Unsubscribe(client *Client, conversationID uuid.UUID) {
 }
 
 // Register adds a client to the Hub, allowing it to receive messages.
-func (h *Hub) Register(client *Client)   { h.register <- client }
+func (h *Hub) Register(client *Client) { h.register <- client }
 
 // Unregister removes a client from the Hub, stopping it from receiving messages.
 func (h *Hub) Unregister(client *Client) { h.unregister <- client }
 
-// Stop signals the Hub t stop processing new requests and to clean up the resources.
+// Stop signals the Hub to stop processing new requests and to clean up the resources.
 // It is Idempotent.
 func (h *Hub) Stop() {
 	h.once.Do(func() { close(h.stop) })
@@ -231,22 +247,18 @@ func (h *Hub) Stop() {
 // Done returns a channel that is closed when the Hub has finished processing all requests and has cleaned up its resources.
 func (h *Hub) Done() <-chan struct{} { return h.done }
 
-// StartIdleChecker starts a goroutine that periodically checks for idle clients and unregisters them 
+// StartIdleChecker starts a goroutine that periodically checks for idle clients and unregisters them
 // if they have been inactive for longer than the specified idleTimeout.
 func (h *Hub) StartIdleChecker(idleTimeout, checkInterval time.Duration) {
 	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
+	h.idleTimeout = idleTimeout
+
 	for {
 		select {
 		case <-ticker.C:
-			now := time.Now()
-			for client := range h.clients {
-				if now.Sub(client.LastActive()) > idleTimeout {
-					logger.Info("Closing idle client", "user_id", client.userID)
-					h.unregister <- client
-				}
-			}
+			h.checkIdleClients <- struct{}{}
 		case <-h.stop:
 			return
 		}
