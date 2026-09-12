@@ -35,7 +35,7 @@ func main() {
 
 	// Init logger
 	logger.Init(cfg.Env)
-	logger.Info("Starting Relay server...")
+	logger.Info("Starting Relay server...", "env", cfg.Env)
 
 	// Register Prometheus metrics
 	metrics.Register(prometheus.DefaultRegisterer)
@@ -55,10 +55,10 @@ func main() {
 		if cfg.Env == "production" {
 			log.Fatalf("Redis required in production: %v", err)
 		}
-		logger.Warn("Redis unavailable, using in-memory fallbacks")
+		logger.Warn("Redis unavailable, using in-memory fallbacks", "error", err)
 	} else {
 		defer redisClient.Close()
-		logger.Info("Redis connected")
+		logger.Info("Redis connected", "addr", cfg.RedisAddr, "db", cfg.RedisDB, "tls", cfg.RedisTLS)
 	}
 
 	// Init stores
@@ -158,6 +158,9 @@ func main() {
 
 	// Apply CORS
 	handler := middleware.CORS(cfg.WSAllowedOrigins)(mux)
+
+	// Apply request ID middleware (before metrics so request_id is available)
+	handler = middleware.RequestID(handler)
 
 	// Apply Prometheus metrics middleware
 	handler = middleware.Metrics()(handler)
