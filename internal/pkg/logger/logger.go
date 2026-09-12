@@ -9,20 +9,13 @@ var log *slog.Logger
 
 func Init(env string) {
 	if env == "production" {
-
 		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		}))
-
 	} else {
-		file, err := os.OpenFile("app.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			log = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-				Level: slog.LevelDebug,
-			}))
-			return
-		}
-		log = slog.New(slog.NewTextHandler(file, &slog.HandlerOptions{
+		// In development, also write to stdout for Docker log collection (Promtail/Loki)
+		// Use JSON format for structured log parsing in Grafana
+		log = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 			Level: slog.LevelDebug,
 		}))
 	}

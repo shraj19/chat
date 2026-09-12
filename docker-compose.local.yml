@@ -5,6 +5,8 @@
 #   - postgres:   Database
 #   - redis:      Cache + presence
 #   - prometheus: Metrics collection (scrapes app every 15s)
+#   - loki:       Log aggregation (receives logs from promtail)
+#   - promtail:   Log shipper (scrapes Docker container logs)
 #   - grafana:    Dashboards (localhost:3000, admin/admin)
 #
 # Your React frontend runs separately (npm run dev in frontend folder).
@@ -80,8 +82,27 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - loki
+
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki-data:/loki
+
+  promtail:
+    image: grafana/promtail:latest
+    volumes:
+      - ./promtail.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
 
 volumes:
   postgres-data:
   prometheus-data:
   grafana-data:
+  loki-data:
