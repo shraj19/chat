@@ -18,6 +18,7 @@ type Client struct {
 	send       chan []byte // buffered channel for outbound messages
 	userID     uuid.UUID
 	username   string
+	sessionID  string // unique ID for this WebSocket session (for log correlation)
 	closeOnce  sync.Once
 	mu         sync.Mutex
 	lastActive time.Time
@@ -31,9 +32,15 @@ func NewClient(conn *websocket.Conn, userID uuid.UUID, username string) *Client 
 		send:       make(chan []byte, 256),
 		userID:     userID,
 		username:   username,
+		sessionID:  uuid.NewString(),
 		lastActive: time.Now(),
 		limiter:    rate.NewLimiter(10, 20),
 	}
+}
+
+// SessionID returns the unique session ID for this WebSocket connection.
+func (c *Client) SessionID() string {
+	return c.sessionID
 }
 
 // Close closes the websocket connection and cleans up resources.
@@ -41,6 +48,11 @@ func NewClient(conn *websocket.Conn, userID uuid.UUID, username string) *Client 
 func (c *Client) Close() {
 	// sync.once ensures Idempotency.
 	c.closeOnce.Do(func() {
+		logger.Info("WebSocket connection closed",
+			"session_id", c.sessionID,
+			"user_id", c.userID,
+		)
+
 		// Decrement the active WebSocket connections metric
 		metrics.WSConnectionsActive.Dec()
 

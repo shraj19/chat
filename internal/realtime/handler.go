@@ -71,12 +71,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		logger.Error("WebSocket upgrade failed", "error", err)
+		logger.Error("WebSocket upgrade failed", "error", err, "user_id", userID)
 		return
 	}
 
 	username := r.URL.Query().Get("username")
 	client := NewClient(conn, userID, username)
+
+	logger.Info("WebSocket connection established",
+		"session_id", client.SessionID(),
+		"user_id", userID,
+		"username", username,
+	)
 
 	// Increment the active WebSocket connections metric when a new client connects.
 	metrics.WSConnectionsActive.Inc()
@@ -176,7 +182,11 @@ func (h *Handler) readPump(client *Client) {
 		// so we exit the loop and close the connection.
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.Error("Unexpected WebSocket close error", "error", err)
+				logger.Error("Unexpected WebSocket close error",
+					"error", err,
+					"session_id", client.SessionID(),
+					"user_id", client.UserID(),
+				)
 			}
 			return
 		}
@@ -228,7 +238,12 @@ func (h *Handler) handleMessage(client *Client, data []byte) {
 
 		_, err := h.msgService.Create(context.Background(), client.UserID(), msg.ConversationID, msg.Content, msg.Username, msg.ClientID)
 		if err != nil {
-			logger.Error("Failed to create message", "error", err)
+			logger.Error("Failed to create message",
+				"error", err,
+				"session_id", client.SessionID(),
+				"user_id", client.UserID(),
+				"conversation_id", msg.ConversationID,
+			)
 		}
 
 	case "subscribe":
