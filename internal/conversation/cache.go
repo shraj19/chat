@@ -47,7 +47,7 @@ func (c *ParticipantCache) IsParticipant(ctx context.Context, conversationID, us
 
 	if err != nil {
 		// Redis error — log and fallback to DB
-		logger.Warn("Redis error while checking participant cache", "error", err)
+		logger.Warn("Redis error while checking participant cache", "error", err, "conversationID", conversationID, "userID", userID)
 		metrics.CacheErrorsTotal.WithLabelValues("participant", "check").Inc()
 
 		// fallback to DB query
