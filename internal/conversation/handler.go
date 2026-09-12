@@ -134,8 +134,11 @@ func (h *Handler) Create() http.Handler {
 
 		conv, err := h.repo.CreateWithParticipants(r.Context(), req.Type, req.Title, displayName, canonicalName, usernameOrder)
 		if err != nil {
+			// Handle the case where the conversation already exists due to a race
 			if errors.Is(err, ErrConversationExists) && canonicalName != "" {
 				if existing, _ := h.repo.GetByCanonicalName(r.Context(), canonicalName); existing != nil {
+					// Return the existing conversation instead of creating a new one
+					// Return 200 Ok with the existing conversation
 					httpx.WriteJSON(w, http.StatusOK, map[string]any{"conversation": existing, "created": false})
 					return
 				}
