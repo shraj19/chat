@@ -12,6 +12,7 @@ import (
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/domain/ent"
+	"chat-v2/internal/middleware"
 	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 	"chat-v2/internal/pkg/validator"
@@ -57,7 +58,11 @@ func (h *Handler) SignUp() http.Handler {
 
 		hashedPassword, err := auth.HashPassword(req.Password)
 		if err != nil {
-			logger.Error("Failed to hash password", "error", err)
+			logger.Error("Failed to hash password",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"username", req.Username,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to create user")
 			return
 		}
@@ -68,12 +73,20 @@ func (h *Handler) SignUp() http.Handler {
 				httpx.WriteError(w, http.StatusConflict, "Username or email already exists")
 				return
 			}
-			logger.Error("Failed to create user", "error", err)
+			logger.Error("Failed to create user",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"username", req.Username,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to create user")
 			return
 		}
 
-		logger.Info("User created", "username", req.Username)
+		logger.Info("User created",
+			"request_id", middleware.GetRequestID(r.Context()),
+			"username", req.Username,
+			"user_id", user.ID,
+		)
 		httpx.WriteJSON(w, http.StatusCreated, map[string]string{
 			"user_id":  user.ID.String(),
 			"username": user.Username,
