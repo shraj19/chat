@@ -9,6 +9,7 @@ import (
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/conversation"
+	"chat-v2/internal/middleware"
 	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 )
@@ -91,7 +92,11 @@ func (h *Handler) List() http.Handler {
 
 		resp, err := h.repo.List(r.Context(), convID, before, limit)
 		if err != nil {
-			logger.Error("Failed to list messages", "error", err)
+			logger.Error("Failed to list messages",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"conversation_id", convID,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to list messages")
 			return
 		}

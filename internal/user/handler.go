@@ -127,7 +127,11 @@ func (h *Handler) Login() http.Handler {
 		now := time.Now()
 		token, err := h.jwt.CreateToken(user.ID, 24*time.Hour)
 		if err != nil {
-			logger.Error("Failed to create token", "error", err)
+			logger.Error("Failed to create token",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"user_id", user.ID,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to create token")
 			return
 		}
@@ -244,7 +248,11 @@ func (h *Handler) Search() http.Handler {
 
 		users, err := h.repo.Search(r.Context(), q, limit)
 		if err != nil {
-			logger.Error("Failed to search users", "error", err)
+			logger.Error("Failed to search users",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"query", q,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to search users")
 			return
 		}

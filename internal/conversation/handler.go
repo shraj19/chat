@@ -12,6 +12,7 @@ import (
 
 	"chat-v2/internal/auth"
 	"chat-v2/internal/domain/ent/conversation"
+	"chat-v2/internal/middleware"
 	"chat-v2/internal/pkg/httpx"
 	"chat-v2/internal/pkg/logger"
 	"chat-v2/internal/storage/redis"
@@ -143,7 +144,12 @@ func (h *Handler) Create() http.Handler {
 					return
 				}
 			}
-			logger.Error("Failed to create conversation", "error", err)
+		logger.Error("Failed to create conversation",
+			"error", err,
+			"request_id", middleware.GetRequestID(r.Context()),
+			"user_id", userID,
+			"type", req.Type,
+		)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to create conversation")
 			return
 		}
@@ -168,7 +174,11 @@ func (h *Handler) List() http.Handler {
 
 		convs, err := h.repo.GetByUserIDWithDisplay(r.Context(), userID)
 		if err != nil {
-			logger.Error("Failed to list conversations", "error", err)
+			logger.Error("Failed to list conversations",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"user_id", userID,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to list conversations")
 			return
 		}
@@ -209,7 +219,12 @@ func (h *Handler) Join() http.Handler {
 		}
 
 		if err := h.repo.AddParticipant(r.Context(), convID, userID); err != nil {
-			logger.Error("Failed to join conversation", "error", err)
+			logger.Error("Failed to join conversation",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"user_id", userID,
+				"conversation_id", convID,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to join conversation")
 			return
 		}
@@ -254,7 +269,12 @@ func (h *Handler) Leave() http.Handler {
 		}
 
 		if err := h.repo.RemoveParticipant(r.Context(), convID, userID); err != nil {
-			logger.Error("Failed to leave conversation", "error", err)
+			logger.Error("Failed to leave conversation",
+				"error", err,
+				"request_id", middleware.GetRequestID(r.Context()),
+				"user_id", userID,
+				"conversation_id", convID,
+			)
 			httpx.WriteError(w, http.StatusInternalServerError, "Failed to leave conversation")
 			return
 		}
